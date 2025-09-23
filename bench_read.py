@@ -8,7 +8,7 @@ def _sqlalchemy_url() -> str:
     url = os.getenv("SQLALCHEMY_DATABASE_URL") or os.getenv("DATABASE_URL")
     if not url:
         # Docker ağı için mantıklı varsayılan
-        url = "postgresql+psycopg2://postgres:Aa3453Aa@tech_advisor_db:5432/tech_advisor"
+        url = "postgresql+psycopg2://postgres:"
     # psycopg3 yoksa +psycopg -> +psycopg2'ye çevir (emniyet)
     if "+psycopg://" in url and not os.getenv("ALLOW_PSYCOPG3"):
         url = url.replace("+psycopg://", "+psycopg2://")
@@ -81,3 +81,4 @@ if __name__ == "__main__":
     print("gpu( GeForce RTX 4060 )     =>", br.gpu_score("GeForce RTX 4060"))
     # alias örneği:
     print("gpu( NVIDIA GeForce RTX 4060 Laptop GPU ) =>", br.gpu_score("NVIDIA GeForce RTX 4060 Laptop GPU"))
+
