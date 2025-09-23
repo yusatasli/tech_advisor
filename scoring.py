@@ -9,7 +9,7 @@ import psycopg2.extras # type: ignore
 # .env içinden DB bağlantısı
 DB_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:Aa3453Aa@tech_advisor_db:5432/tech_advisor"
+    "postgresql://postgres:"
 )
 
 # Ağırlıklar (istersen .env ile override edebilirsin)
@@ -131,3 +131,4 @@ if __name__ == "__main__":
     print("[scoring] Fiyat/Performans puanlama script'i başlatılıyor...")
     run()
     print("[scoring] İşlem tamamlandı.")
+
