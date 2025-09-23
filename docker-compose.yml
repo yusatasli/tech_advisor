@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: tech_advisor
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: Aa3453Aa
+      POSTGRES_PASSWORD: 
     ports:
       - "5432:5432"
     volumes:
@@ -28,4 +28,5 @@ services:
 
 volumes:
   pgdata:
+
 
