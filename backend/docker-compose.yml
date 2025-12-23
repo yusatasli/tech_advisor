@@ -1,0 +1,112 @@
+# Bu dosya, projenin ihtiyaç duyduğu TÜM servisleri içerir.
+# Hem veritabanı, hem cache, hem de arka plan görevleri tek bir yerden yönetilir.
+
+services:
+  # 1. Veritabanı Servisi (PostgreSQL)
+  db:
+    image: postgres:16-alpine
+    container_name: tech_advisor_db
+    environment:
+      POSTGRES_DB: tech_advisor
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Aa3453Aa
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tech_advisor"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tech_advisor_network
+
+  # 2. Cache & Mesaj Kuyruğu Servisi (Redis)
+  redis:
+    image: redis:7-alpine
+    container_name: tech_advisor_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tech_advisor_network
+      
+  # 3. YENİ EKLENDİ: Selenium/Chrome Servisi
+  # ...
+  selenium:
+    image: seleniarm/standalone-chromium:latest
+    container_name: tech_advisor_selenium
+    shm_size: 2g
+    environment:
+      - SE_NODE_MAX_SESSIONS=12      # ← YENİ: 12 paralel browser
+      - SE_NODE_SESSION_TIMEOUT=300  # ← YENİ: 5 dakika timeout
+    networks:
+      - tech_advisor_network
+
+  # 4. Ana API Servisi (FastAPI)
+  api:
+    build: .
+    container_name: tech_advisor_api
+    ports:
+      - "8000:8000"
+    environment:
+      # ÖNEMLİ: Artık localhost yerine servis isimlerini kullanıyoruz
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://postgres:Aa3453Aa@db:5432/tech_advisor
+      - SELENIUM_URL=http://selenium:4444/wd/hub # Selenium'a bağlanmak için
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - BRAVE_API_KEY=${BRAVE_API_KEY} # web_search için
+      - PYTHONPATH=/app
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      selenium: # Artık selenium servisine de bağımlı
+        condition: service_started # Selenium için service_healthy karmaşık olabilir
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - tech_advisor_network
+
+  # 5. Arka Plan İşçisi (Celery Worker)
+  celery_worker:
+    build: .
+    container_name: tech_advisor_celery_worker
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://postgres:Aa3453Aa@db:5432/tech_advisor
+      - SELENIUM_URL=http://selenium:4444/wd/hub # Celery de selenium'a erişebilmeli
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PYTHONPATH=/app
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      selenium:
+        condition: service_started
+    command: celery -A tasks worker --loglevel=info --concurrency=2 # Concurrency'yi düşürdük
+    networks:
+      - tech_advisor_network
+
+# Tüm servislerin birbiriyle konuşmasını sağlayan sanal ağ
+networks:
+  tech_advisor_network:
+    driver: bridge
+
+# Verilerin kalıcı olmasını sağlayan disk alanları
+volumes:
+  pgdata:
+  redis_data:

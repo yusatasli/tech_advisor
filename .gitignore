@@ -1,0 +1,19 @@
+# Environment variables (API keys burada!)
+.env
+*.env
+backend/.env
+
+# Python önbellek dosyaları (gereksiz)
+__pycache__/
+*.pyc
+
+# IDE dosyaları (VSCode, Cursor ayarları)
+.vscode/
+.DS_Store
+
+# Log dosyaları
+*.log
+
+# Node modules (frontend)
+node_modules/
+backend/chrome_profile/
