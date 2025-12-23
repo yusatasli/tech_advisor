@@ -43,10 +43,10 @@ Mehmet Yuşa Taşlı
 ## 📸 Screenshots
 
 ### Ana Sayfa
-![Ana Sayfa](screenshots/main page.png)
+![Ana Sayfa](screenshots/main_page.png)
 
 ### Arama Geçmişi
-![Geçmiş Aramalar](screenshots/main page with details.png)
+![Geçmiş Aramalar](screenshots/main_page_with_details.png)
 
 ### Arama Sonuçları
 ![Sonuçlar 1](screenshots/results-1.png)
