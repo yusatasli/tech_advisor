@@ -37,3 +37,25 @@ docker-compose up -d
 ## 👨‍💻 Geliştirici
 
 Mehmet Yuşa Taşlı
+
+---
+
+## 📸 Screenshots
+
+### Ana Sayfa
+![Ana Sayfa](screenshots/main_page.png)
+
+### Arama Geçmişi
+![Geçmiş Aramalar](screenshots/main_page_with_details.png)
+
+### Arama Sonuçları
+![Sonuçlar 1](screenshots/results-1.png)
+
+### Detaylı Ürün Analizi
+![Sonuçlar 2](screenshots/results-2.png)
+
+---
+
+## 🔗 Links
+
+**GitHub:** https://github.com/yusatasli/tech_advisor
