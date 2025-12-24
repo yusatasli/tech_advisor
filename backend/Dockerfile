@@ -40,5 +40,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # 6. Adım: Uygulamayı çalıştıracak komut
-CMD ["python", "main.py"]
+CMD ["sh", "-c", "python create_tables.py; uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
 
