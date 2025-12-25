@@ -43,6 +43,14 @@ app = FastAPI(
     description="Akıllı ürün tavsiye motoru için streaming destekli API.",
     version="4.1"
 ) 
+@app.get("/")
+async def root():
+    return {"status": "ok", "service": "Tech Advisor API"}
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
+
 # CORS ayarları
 app.add_middleware(
     CORSMiddleware,
