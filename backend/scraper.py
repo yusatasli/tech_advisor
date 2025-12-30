@@ -73,12 +73,19 @@ def _build_driver() -> webdriver.Remote:
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--window-size=1920,1080")
-    opts.add_argument("--disable-blink-features=AutomationControlled")
-    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
-    opts.add_experimental_option("useAutomationExtension", False)
-    opts.add_argument(f"user-agent={_pick_ua()}")
-    opts.add_argument("--lang=tr-TR,tr")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--disable-software-rasterizer")
+    opts.add_argument("--disable-extensions")
+    opts.add_argument("--disable-background-networking")
+    opts.add_argument("--disable-default-apps")
+    opts.add_argument("--disable-sync")
+    opts.add_argument("--metrics-recording-only")
+    opts.add_argument("--mute-audio")
+    opts.add_argument("--no-first-run")
+    opts.add_argument("--safebrowsing-disable-auto-update")
+    opts.add_argument("--window-size=1280,720")  # Daha küçük window
+    opts.add_argument("--single-process")  # ÖNEMLİ: Tek process!
+    opts.add_argument("--disable-features=IsolateOrigins,site-per-process")
 
     try:
         if selenium_url:
