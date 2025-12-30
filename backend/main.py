@@ -646,21 +646,19 @@ async def get_me(current_user: dict = Depends(get_current_user)):
     # Gün değişmişse arama hakkını sıfırla
     today = date.today()
     last_date = user["last_search_date"]
-    
+
     if last_date != today:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE users SET daily_searches_used = 0, last_search_date = CURRENT_DATE WHERE id = %s",
-            (user["id"],)
-        )
-        conn.commit()
-        cur.close()
-        conn.close()
-        
-        # User objesini güncelle
-        user["daily_searches_used"] = 0
-        user["last_search_date"] = today
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                "UPDATE users SET daily_searches_used = 0, last_search_date = CURRENT_DATE WHERE id = %s",
+                (user["id"],)
+            )
+            conn.commit()
+    
+    # User objesini güncelle
+    user["daily_searches_used"] = 0
+    user["last_search_date"] = today
     
     return UserResponse(
         id=user["id"],
