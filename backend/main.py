@@ -39,10 +39,21 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY) if (OPENAI_API_KEY and OpenAI) else None
 
 app = FastAPI(
-    title="Tech Advisor API", 
+    title="Tech Advisor API",
     description="Akıllı ürün tavsiye motoru için streaming destekli API.",
     version="4.1"
-) 
+)
+
+# CORS ayarları - HEMEN SONRA!
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Sonra route'lar
 @app.get("/")
 async def root():
     return {"status": "ok", "service": "Tech Advisor API"}
@@ -50,15 +61,6 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
-
-# CORS ayarları
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Frontend URL'i
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # ----------------------- Yardımcılar -----------------------
 def parse_budget_tl(text: str) -> Optional[float]:
