@@ -85,9 +85,10 @@ def _build_driver() -> webdriver.Remote:
             logger.info(f"Docker modunda çalışıyor - Selenium URL: {selenium_url}")
             driver = webdriver.Remote(command_executor=selenium_url, options=opts)
         else:
-            logger.info("Lokal modda çalışıyor - ChromeDriver kullanılıyor")
-            from webdriver_manager.chrome import ChromeDriverManager
-            service = ChromeService(ChromeDriverManager().install())
+            logger.info("Railway/Production modda - System Chromium kullanılıyor")
+            # Railway'de chromium ve chromedriver zaten kurulu
+            opts.binary_location = "/usr/bin/chromium"
+            service = ChromeService("/usr/bin/chromedriver")
             driver = webdriver.Chrome(service=service, options=opts)
         
         # --- EKLENEN EN KRİTİK SATIR ---
