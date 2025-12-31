@@ -19,4 +19,4 @@ PyJWT
 passlib[bcrypt]
 bcrypt
 email-validator
-google-generativeai
+google-genai

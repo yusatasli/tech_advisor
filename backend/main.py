@@ -20,9 +20,11 @@ from candidates import gather_candidates, gather_candidates_async, CATEGORY_SITE
 from db import get_db_connection, get_final_score_by_name
 
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
 except Exception:
     genai = None
+    types = None
 
 from auth import (
     UserRegister, UserLogin, UserResponse,
@@ -37,10 +39,9 @@ from db import (
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY and genai:
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    client = genai.Client(api_key=GEMINI_API_KEY)
 else:
-    model = None
+    client = None
 
 app = FastAPI(
     title="Tech Advisor API",
@@ -356,7 +357,7 @@ async def search_structured(query: StructuredQuery, current_user: dict = Depends
     """
 
     # Adım 3: Gemini API Çağrısı
-    if not model:
+    if not client:
         return StructuredAnswer(introductory_text="Gemini API anahtarı yapılandırılmamış.", recommendations=[])
 
     try:
@@ -365,9 +366,10 @@ async def search_structured(query: StructuredQuery, current_user: dict = Depends
 
 """ + prompt
 
-        response = model.generate_content(
-            full_prompt,
-            generation_config=genai.GenerationConfig(
+        response = client.models.generate_content(
+            model='gemini-2.0-flash-exp',
+            contents=full_prompt,
+            config=types.GenerateContentConfig(
                 temperature=0.7,
                 response_mime_type="application/json"
             )
