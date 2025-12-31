@@ -18,4 +18,4 @@ ratelimit==2.2.1
 PyJWT
 passlib[bcrypt]
 bcrypt
-email-validator
+email-validatorgoogle-generativeai
