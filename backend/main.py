@@ -239,7 +239,7 @@ async def process_query_logic(query_str: str, count: int = 6):
     budget = q_parsed.budget
 
     all_products = []
-    async for chunk in gather_candidates_async(query_str, category=category, budget=budget):
+    async for chunk in gather_candidates_async(query_str, count=6, explicit_budget=budget):
         event_type = chunk.get("event")
         if event_type == "filtering_complete":
             all_products = chunk.get("products", [])
