@@ -235,8 +235,8 @@ async def process_query_logic(query_str: str, count: int = 6):
     4. En iyi <count> tanesini döndür
     """
     q_parsed = parse_query(query_str)
-    category = q_parsed.get("category")
-    budget = q_parsed.get("budget")
+    category = q_parsed.category
+    budget = q_parsed.budget
 
     all_products = []
     async for chunk in gather_candidates_async(query_str, category=category, budget=budget):
@@ -265,8 +265,8 @@ async def search_stream(query_data: StreamingQuery, current_user: dict = Depends
 
         async def gather_events():
             q_parsed = parse_query(query_data.query)
-            category = q_parsed.get("category")
-            budget = q_parsed.get("budget")
+            category = q_parsed.category
+            budget = q_parsed.budget
 
             async for chunk in gather_candidates_async(query_data.query, category=category, budget=budget):
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
