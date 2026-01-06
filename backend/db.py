@@ -4,7 +4,7 @@ import psycopg2.extras
 import psycopg2.pool
 from typing import Optional, Dict, Any, Union
 from contextlib import contextmanager
-from urllib.parse import urlparse
+
 from logger import (
     get_logger,
     retry_on_failure,
@@ -16,24 +16,11 @@ from logger import (
 
 logger = get_logger("database")
 
-# DATABASE_URL varsa onu kullan (Render için)
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-if DATABASE_URL:
-    # Parse DATABASE_URL
-    url = urlparse(DATABASE_URL)
-    DB_NAME = url.path[1:]  # /tech_advisor_lvqr -> tech_advisor_lvqr
-    DB_USER = url.username
-    DB_PASSWORD = url.password
-    DB_HOST = url.hostname
-    DB_PORT = url.port or 5432
-else:
-    # Local fallback
-    DB_NAME = os.getenv("POSTGRES_DB", "tech_advisor")
-    DB_USER = os.getenv("POSTGRES_USER", "postgres")
-    DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "Aa3453Aa")
-    DB_HOST = os.getenv("POSTGRES_HOST", "tech_advisor_db")
-    DB_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
+DB_NAME = os.getenv("POSTGRES_DB", "tech_advisor")
+DB_USER = os.getenv("POSTGRES_USER", "postgres")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "Aa3453Aa")
+DB_HOST = os.getenv("POSTGRES_HOST", "tech_advisor_db")
+DB_PORT = os.getenv("POSTGRES_PORT", "5432")
 
 MIN_CONNECTIONS = int(os.getenv("DB_MIN_CONNECTIONS", "1"))
 MAX_CONNECTIONS = int(os.getenv("DB_MAX_CONNECTIONS", "10"))

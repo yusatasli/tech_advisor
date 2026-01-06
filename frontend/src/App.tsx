@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import ReactDOM from 'react-dom';  
 import './App.css';
 import { searchProductsWithAuth, getSearchHistory } from './api';
 import AuthModal from './AuthModal';  
+import ReactDOM from 'react-dom';
 
 function App() {
   const [query, setQuery] = useState('');

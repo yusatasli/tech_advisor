@@ -20,11 +20,9 @@ from candidates import gather_candidates, gather_candidates_async, CATEGORY_SITE
 from db import get_db_connection, get_final_score_by_name
 
 try:
-    from google import genai
-    from google.genai import types
+    from openai import OpenAI
 except Exception:
-    genai = None
-    types = None
+    OpenAI = None
 
 from auth import (
     UserRegister, UserLogin, UserResponse,
@@ -37,36 +35,30 @@ from db import (
     add_search_history, get_search_history
 )
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if GEMINI_API_KEY and genai:
-    client = genai.Client(api_key=GEMINI_API_KEY)
-else:
-    client = None
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY) if (OPENAI_API_KEY and OpenAI) else None
 
 app = FastAPI(
-    title="Tech Advisor API",
+    title="Tech Advisor API", 
     description="Akıllı ürün tavsiye motoru için streaming destekli API.",
     version="4.1"
-)
+) 
+# --- GÜNCELLENMİŞ CORS AYARLARI ---
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8000"
+]
 
-# CORS ayarları - HEMEN SONRA!
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Sonra route'lar
-@app.get("/")
-async def root():
-    return {"status": "ok", "service": "Tech Advisor API"}
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
-
 # ----------------------- Yardımcılar -----------------------
 def parse_budget_tl(text: str) -> Optional[float]:
     t = (text or "").lower().replace(".", "").replace(",", "")
@@ -214,87 +206,272 @@ class Answer(BaseModel):
 class AIRecommendation(Candidate):
     """
     Candidate modelindeki tüm alanlara ek olarak,
-    AI'ın yaptığı yorumu da içeren model.
+    yapay zeka tarafından üretilen yorumu da içerir.
     """
     ai_commentary: str
 
 class StructuredAnswer(BaseModel):
     """
-    Yeni: OpenAI'dan dönen yapılandırılmış cevap.
+    AI analizinin nihai, birleşik yanıt formatı.
     """
-    introductory_text: str
+    introductory_text: str 
     recommendations: List[AIRecommendation]
+    
+class StreamSearchRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    count: int = Field(default=8, ge=1, le=30)
+    budget: Optional[float] = Field(default=None, description="Explicit budget in TL")
 
+# ----------------------- Mantık ve Uç Noktalar -----------------------
 
-# ----------------------- ASYNC QUERY PROCESSING LOGIC -----------------------
-async def process_query_logic(query_str: str, count: int = 6):
+async def process_query_logic(query: str, count: int, explicit_budget: Optional[float] = None) -> List[Dict[str, Any]]:
     """
-    1. Önce cache kontrol et
-    2. Yoksa gather_candidates_async(...) çağır
-    3. Sonuçları puanla/sırala
-    4. En iyi <count> tanesini döndür
+    Sorguyu işleyen, adayları toplayan ve sıralayan ana mantık.
+    GÜNCELLENMİŞ (v5.3): Web öncelikli sıralama mantığı ile uyumlu.
     """
-    q_parsed = parse_query(query_str)
-    category = q_parsed.category
-    budget = q_parsed.budget
+    final_products = []
+    
+    # 1. Adayları Topla (gather_candidates_async zaten Web-First çalışıyor)
+    async for chunk in gather_candidates_async(query, count=count + 5, explicit_budget=explicit_budget):
+        if chunk.get("status") == "complete" or chunk.get("status") == "cache_hit":
+            final_products = chunk.get("products", [])
+            break 
+        elif chunk.get("status") == "fatal_error" or chunk.get("status") == "error":
+            print(f"Arama sırasında hata: {chunk.get('message')}")
+            return []
 
-    all_products = []
-    async for chunk in gather_candidates_async(query_str, count=6, explicit_budget=budget):
-        event_type = chunk.get("event")
-        if event_type == "filtering_complete":
-            all_products = chunk.get("products", [])
-            break
+    if not final_products:
+        return []
 
-    query_features = _extract_features_from_query(query_str)
-    for p in all_products:
-        p["score"] = _score_product(p, budget, query_features)
+    # 2. Sorgu Analizi (Filtreleme için)
+    parsed_query = parse_query(query)
+    category = parsed_query.category
+    
+    # Eğer API'den açık bütçe gelmediyse, parsed_query'den al
+    budget = explicit_budget if explicit_budget is not None else parsed_query.budget
 
-    all_products.sort(key=lambda x: x.get("score", 0), reverse=True)
-    return all_products[:count]
+    # 3. Kategori Filtreleme (Sadece yanlış kategorileri temizle)
+    if category:
+        # Web sonuçlarında kategori bazen boş gelebilir, onları hemen eleme
+        final_products = [
+            p for p in final_products 
+            if p.get("category") is None or p.get("category").lower() == category.lower()
+        ]
 
+    # 4. Özellikleri Çıkar
+    query_features = _extract_features_from_query(query)
 
-# ==================== STREAMING (ASYNC) ENDPOINTS ====================
-@app.post("/search_stream")
-async def search_stream(query_data: StreamingQuery, current_user: dict = Depends(get_current_user)):
-    """
-    Streaming endpoint: Frontend her chunk'ı alıp ekranda gösterebilir.
-    Burada sadece aday toplama/filtreleme eventlerini stream ediyoruz.
-    """
-    def event_generator():
-        import asyncio
+    # 5. Puanlama ve Sıralama
+    for prod in final_products:
+        prod["_score"] = _score_product(prod, budget, query_features)
 
-        async def gather_events():
-            q_parsed = parse_query(query_data.query)
-            category = q_parsed.category
-            budget = q_parsed.budget
+    # Puana göre azalan sırala
+    final_products.sort(key=lambda x: x.get("_score", 0), reverse=True)
+    
+    # İstenen sayı kadarını al
+    return final_products[:count]
 
-            async for chunk in gather_candidates_async(query_data.query, category=category, budget=budget):
-                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+@app.post("/ask", response_model=Answer, tags=["Product Search"])
+async def ask(query: Query):
+    start_time = time.time()
+    query_text = query.query
+    explicit_budget = query.budget
 
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    best_products = await process_query_logic(query_text, count=5, explicit_budget=explicit_budget)
+
+    elapsed = time.time() - start_time
+
+    final_answer_text = "İstediğiniz ürünleri bulamadık." if not best_products else "İşte önerilerimiz!"
+    return Answer(
+        answer=final_answer_text,
+        explanation=f"Toplam {len(best_products)} aday bulundu. ({elapsed:.2f}s)",
+        products=[Candidate(**p) for p in best_products]
+    )
+
+@app.post("/structured_ask_stream", tags=["Product Search"])
+async def structured_ask_stream(request: StreamingQuery):
+    query = request.query
+    count = request.count
+
+    async def stream_generator():
         try:
-            gen = gather_events()
-            while True:
+            async for chunk in gather_candidates_async(query, count):
+                yield json.dumps(chunk, ensure_ascii=False) + "\n"
+        except Exception as e:
+            error_data = {
+                "status": "fatal_error",
+                "message": f"Sunucuda hata oluştu: {str(e)}"
+            }
+            yield json.dumps(error_data, ensure_ascii=False) + "\n"
+
+    # Jeneratörü, StreamingResponse ile döndür.
+    return StreamingResponse(stream_generator(), media_type="application/x-ndjson")
+
+@app.post("/structured_ask_stream_with_ai", tags=["Product Search"])
+async def structured_ask_stream_with_ai(
+    request: StreamSearchRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Hibrit endpoint: Stream hızı + AI yorumu
+    
+    Akış:
+    1. Stream ile tüm ürünleri döndür (hızlı) ✅
+    2. En iyi 3 ürün için AI yorumu oluştur 🤖
+    3. AI yorumlarını ekstra event olarak gönder 📤
+    """
+    # Kullanıcı bilgilerini getir
+    user = get_user_by_id(current_user["user_id"])
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    
+    # Günlük limit kontrolü
+    from datetime import date
+    today = date.today()
+    searches_used = user["daily_searches_used"]
+    last_date = user["last_search_date"]
+    
+    # Gece yarısı reset
+    if last_date != today:
+        searches_used = 0
+    
+    # Limit dolmuş mu?
+    if searches_used >= user["daily_searches_limit"]:
+        raise HTTPException(
+            status_code=429, 
+            detail=f"Günlük arama limitiniz doldu. Limit: {user['daily_searches_limit']} arama/gün"
+        )
+        
+    # Arama sayısını artır
+    increment_result = increment_user_search(current_user["user_id"])
+    if increment_result is None:
+        raise HTTPException(status_code=500, detail="Arama kaydedilemedi")
+    if not increment_result:
+        raise HTTPException(
+            status_code=429, 
+            detail="Günlük arama hakkınız dolmuştur. Lütfen yarın tekrar deneyin."
+        )
+        
+    # Query'yi parse et ve kategoriyi al
+    parsed = parse_query(request.query)
+    category_for_history = parsed.category if parsed.category else None
+    
+    # Arama geçmişine kaydet (kategori ile)
+    add_search_history(current_user["user_id"], request.query, category_for_history)
+    
+    query = request.query
+    count = request.count
+    explicit_budget = request.budget
+    
+    async def stream_generator():
+        try:
+            # Adım 1: Stream ile ürünleri gönder (hızlı)
+            final_products = []
+            async for chunk in gather_candidates_async(query, count, explicit_budget=explicit_budget):
+                yield json.dumps(chunk, ensure_ascii=False) + "\n"
+                
+                # Tüm ürünler geldiğinde kaydet
+            if chunk.get("status") in ["complete", "cache_hit", "filtering_complete"]:
+                    final_products = chunk.get("products", [])
+            
+            # Adım 2: AI yorumlarını oluştur (sadece en iyi 3 ürün için)
+            if final_products and client:
                 try:
-                    data = loop.run_until_complete(gen.__anext__())
-                    yield data
-                except StopAsyncIteration:
-                    break
-        finally:
-            loop.close()
+                    # En iyi 3 ürünü seç
+                    top_3_products = final_products[:3]
+                    
+                    # AI için veri hazırla
+                    product_data_for_ai = []
+                    for p in top_3_products:
+                        product_data_for_ai.append({
+                            "name": p.get("name"),
+                            "price": p.get("price"),
+                            "brand": p.get("brand"),
+                            "source": (p.get("source") or "").replace("_scraped", ""),
+                            "specs": p.get("specs", {})
+                        })
+                    
+                    # Kullanıcının query'sini özetle
+                    user_request_summary = f"Kullanıcı şunu arıyor: '{query}'"
+                    
+                    # AI prompt
+                    prompt = f"""
+                    Sen deneyimli, samimi ve teknik detaylara hakim bir teknoloji danışmanısın.
+                    {user_request_summary}
+                    
+                    Aşağıdaki ürünlerin HER BİRİ için kısa (2-3 cümle), özgün ve doğal bir yorum yaz.
+                    
+                    KURALLAR:
+                    1. Her yorum farklı bir açıdan yaklaşmalı (performans, fiyat, taşınabilirlik, vs.)
+                    2. Klişe başlangıçlar kullanma ("Bu ürün...", "Güçlü işlemcisi ile...")
+                    3. Doğrudan özelliklerden bahset
+                    4. Samimi ve ikna edici ol
+                    
+                    JSON formatında yanıt ver:
+                    {{
+                      "commentaries": [
+                        {{"name": "Ürün Adı", "commentary": "Yorum metni"}},
+                        ...
+                      ]
+                    }}
+                    
+                    Ürün Listesi:
+                    {json.dumps(product_data_for_ai, ensure_ascii=False, indent=2)}
+                    """
+                    
+                    # OpenAI API çağrısı
+                    response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "Sen piyasayı iyi bilen, samimi bir teknoloji uzmanısın."
+                            },
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.7,
+                        response_format={"type": "json_object"}
+                    )
+                    
+                    ai_response = json.loads(response.choices[0].message.content)
+                    commentaries = ai_response.get("commentaries", [])
+                    
+                    # AI yorumlarını ürünlerle eşleştir
+                    products_with_ai = []
+                    for product in top_3_products:
+                        commentary = next(
+                            (c["commentary"] for c in commentaries if c["name"] == product.get("name")),
+                            None
+                        )
+                        if commentary:
+                            product_copy = product.copy()
+                            product_copy["ai_commentary"] = commentary
+                            products_with_ai.append(product_copy)
+                    
+                    # AI yorumlarını stream olarak gönder
+                    yield json.dumps({
+                        "status": "ai_commentary_added",
+                        "products_with_ai": products_with_ai
+                    }, ensure_ascii=False) + "\n"
+                    
+                except Exception as e:
+                    print(f"AI Commentary Error: {e}")
+                    yield json.dumps({
+                        "status": "ai_commentary_failed",
+                        "message": f"AI yorumu oluşturulamadı: {str(e)}"
+                    }, ensure_ascii=False) + "\n"
+            
+        except Exception as e:
+            error_data = {"status": "fatal_error", "message": f"Hata: {str(e)}"}
+            yield json.dumps(error_data, ensure_ascii=False) + "\n"
+    
+    return StreamingResponse(stream_generator(), media_type="application/x-ndjson")
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-
-# ==================== STRUCTURED SEARCH (GPT JSON FORMAT) ====================
-@app.post("/search_structured", response_model=StructuredAnswer)
-async def search_structured(query: StructuredQuery, current_user: dict = Depends(get_current_user)):
-    """
-    1. gather_candidates_async → ürünleri topla (scraping + db fallback)
-    2. OpenAI'dan JSON formatında 3 tavsiye + yorumlar al
-    3. StructuredAnswer döndür
-    """
+@app.post("/structured_ask", response_model=StructuredAnswer, tags=["Product Search"])
+async def structured_ask(query: StructuredQuery):
+    start = time.time()
     
     # Adım 1: Aday ürünleri bul
     combined_query_for_search = query.features.strip()
@@ -306,7 +483,7 @@ async def search_structured(query: StructuredQuery, current_user: dict = Depends
             recommendations=[]
         )
     
-    # Adım 2: Gemini için veri hazırla
+    # Adım 2: OpenAI için veri hazırla
     product_data_for_ai = []
     for p in best_products:
         product_data_for_ai.append({
@@ -356,26 +533,25 @@ async def search_structured(query: StructuredQuery, current_user: dict = Depends
     {json.dumps(product_data_for_ai, ensure_ascii=False, indent=2)}
     """
 
-    # Adım 3: Gemini API Çağrısı
+    # Adım 3: OpenAI API Çağrısı
     if not client:
-        return StructuredAnswer(introductory_text="Gemini API anahtarı yapılandırılmamış.", recommendations=[])
+        return StructuredAnswer(introductory_text="OpenAI API anahtarı yapılandırılmamış.", recommendations=[])
 
     try:
-        # Gemini için prompt'a sistem mesajını ekle
-        full_prompt = """Sen piyasayı çok iyi bilen, teknik terimlere hakim bir donanım uzmanısın. Asla sıkıcı ve tekrar eden cümleler kurmazsın.
-
-""" + prompt
-
-        response = client.models.generate_content(
-            model='gemini-2.0-flash-exp',
-            contents=full_prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.7,
-                response_mime_type="application/json"
-            )
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system", 
+                    "content": "Sen piyasayı çok iyi bilen, teknik terimlere hakim bir donanım uzmanısın. Asla sıkıcı ve tekrar eden cümleler kurmazsın."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7, # Yaratıcılığı artırmak için biraz yükselttik
+            response_format={"type": "json_object"}
         )
         
-        ai_response_json = json.loads(response.text)
+        ai_response_json = json.loads(response.choices[0].message.content)
         
         # AI, URL'leri ve ID'leri bilmediği için onları orijinal listeden eşleştiriyoruz
         final_recommendations = []
@@ -471,13 +647,15 @@ async def get_me(current_user: dict = Depends(get_current_user)):
     last_date = user["last_search_date"]
     
     if last_date != today:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE users SET daily_searches_used = 0, last_search_date = CURRENT_DATE WHERE id = %s",
-                    (user["id"],)
-                )
-                conn.commit()
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE users SET daily_searches_used = 0, last_search_date = CURRENT_DATE WHERE id = %s",
+            (user["id"],)
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
         
         # User objesini güncelle
         user["daily_searches_used"] = 0

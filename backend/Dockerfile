@@ -1,43 +1,44 @@
+# 1. Adım: Temel imaj olarak Python 3.9'un hafif bir versiyonunu kullan
 FROM python:3.9-slim
 
-# Chromium ve gerekli dependencies kurulumu
+# Sistemin yerel ayarlarını ve saat dilimini yapılandır
+ENV LANG C.UTF-8
+ENV TZ=Europe/Istanbul
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# 2. Adım: Gerekli sistem bağımlılıklarını ve Chromium'u kur
+# NOT: Google Chrome yerine, Apple Silicon (ARM64) mimarisiyle uyumlu olan Chromium kuruluyor.
 RUN apt-get update && apt-get install -y \
+    curl \
+    unzip \
+    wget \
+    gnupg \
+    # ---- SELENIUM İÇİN GEREKLİ TARAYICI ----
     chromium \
-    chromium-driver \
+    # ----------------------------------------
+    # Chrome için gerekli olan ve Chromium'un da kullandığı temel kütüphaneler
+    libglib2.0-0 \
+    libnss3 \
+    libfontconfig1 \
+    libxtst6 \
+    # psycopg2 için gerekli
     libpq-dev \
     build-essential \
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libatspi2.0-0 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libwayland-client0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxkbcommon0 \
-    libxrandr2 \
-    xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
+# Google Chrome kurma adımları mimari uyumsuzluğu nedeniyle tamamen kaldırıldı.
+
+# 3. Adım: Çalışma dizinini ayarla
 WORKDIR /app
 
+# 4. Adım: Python kütüphanelerini kur
 COPY requirements.txt requirements.txt
+RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
+# 5. Adım: Proje dosyalarının tamamını konteynerin içine kopyala
 COPY . .
 
-# Chromium path environment variable
-ENV CHROME_BIN=/usr/bin/chromium
-ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
+# 6. Adım: Uygulamayı çalıştıracak komut
+CMD ["python", "main.py"]
 
-EXPOSE 8080
-
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
